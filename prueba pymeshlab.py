@@ -102,7 +102,7 @@ ms.save_current_mesh(output_file)
 print(f"Malla simplificada guardada en {output_file}")
 
 
-ms.load_new_mesh('C:/Users/diego/OneDrive/Escritorio/TFG/material/Modelos/prueba python/prueba.ply')
+ms.load_new_mesh('C:/Users/diego/OneDrive/Escritorio/TFG/material/Modelos/prueba python/mallareducida.ply')
 
 
 # Aplicar el filtro 'Parametrization: Voronoi Atlas'

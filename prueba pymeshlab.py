@@ -3,7 +3,7 @@ import pymeshlab
 import numpy as np
 import os
 
-file_name : str = 'C:/Users/diego/OneDrive/Escritorio/TFG/material/Modelos/prueba python/BustOfNefertitti.ply'
+file_name : str = '/mnt/c/Users/diego/OneDrive/Escritorio/TFG/material/Modelos/prueba python/bustconnormales.ply'
 if not os.path.exists(file_name):
     print(f"Archivo no encontrado: {file_name}")
 
@@ -36,9 +36,10 @@ print("Malla guardada con éxito.")
 print("Lista de filtros disponibles:")
 pymeshlab.print_filter_list()
 """
+"""
 k_neighbors = 10  # Número de vecinos
 smooth_iterations = 0  # Sin iteraciones de suavizado
-flip_normals = False  # No voltear las normales
+flip_normals = True  # No voltear las normales
 viewpoint_position = np.array([0, 0, 0])  # Posición de la cámara (puedes ajustarlo)
 
 # Aplica el filtro
@@ -51,7 +52,7 @@ ms.compute_normal_for_point_clouds(k=k_neighbors, smoothiter=smooth_iterations,
 #assert ms.mesh_number() == 2
 
 # Guarda el resultado con las normales calculadas
-ms.save_current_mesh('point_cloud_with_normals.ply')
+ms.save_current_mesh('point_cloud_with_normals.ply', save_vertex_flag = True, save_vertex_normal = True)
 
 
 
@@ -101,11 +102,16 @@ ms.save_current_mesh(output_file)
 
 print(f"Malla simplificada guardada en {output_file}")
 
+"""
+ms.load_new_mesh('/mnt/c/Users/diego/OneDrive/Escritorio/TFG/material/Modelos/prueba python/mallareducida.ply')
 
-ms.load_new_mesh('C:/Users/diego/OneDrive/Escritorio/TFG/material/Modelos/prueba python/mallareducida.ply')
+#first of all you got to create a memory space for the textcoord.
+# Apply the 'compute_texcoord_by_function_per_vertex' filter
 
+ms.apply_filter('compute_texcoord_by_function_per_vertex')  # Apply to all wedges
 
 # Aplicar el filtro 'Parametrization: Voronoi Atlas'
+
 # Configura los parámetros según tus necesidades
 ms.apply_filter(
     'generate_voronoi_atlas_parametrization',
@@ -113,15 +119,25 @@ ms.apply_filter(
     overlapflag=False      # Generar regiones superpuestas (útil para mipmaps)
 )
 
+ms.apply_filter('compute_texcoord_transfer_vertex_to_wedge')
+
 # Guardar la malla parametrizada
 output_file = 'voronoi_atlas_mesh.ply'
-ms.save_current_mesh(output_file)
+ms.save_current_mesh(
+    file_name=output_file,
+    binary=False,                # Formato binario
+    save_vertex_color = False,
+    save_vertex_coord=True,     # Guardar coordenadas de vértices
+    save_wedge_texcoord=True    # Guardar coordenadas UV
+)
 print(f"Malla textura guardada en {output_file}")
 
 
+#ms.load_new_mesh('/mnt/c/Users/diego/OneDrive/Escritorio/TFG/material/Modelos/prueba python/parametrizado.ply')
+#ms.apply_filter('compute_texcoord_transfer_vertex_to_wedge')
 
-#mscount = ms.mesh_number() 
-#print(f"Número de mallas presentes en el MeshSet: {mscount}")
+mscount = ms.mesh_number() 
+print(f"Número de mallas presentes en el MeshSet: {mscount}")
 
 uv_check = ms.current_mesh().has_wedge_tex_coord()
 print(f"La malla objetivo tiene coordenadas UV: {uv_check}")
@@ -129,19 +145,25 @@ print(f"La malla objetivo tiene coordenadas UV: {uv_check}")
 ms.apply_filter(
     'transfer_attributes_to_texture_per_vertex',
     sourcemesh=0,               # Índice de la malla fuente
-    targetmesh=3,               # Índice de la malla objetivo
+    targetmesh=2,               # Índice de la malla objetivo
     attributeenum='Vertex Color',  # Atributo a transferir (e.g., Vertex Color, Vertex Normal)
     upperbound= pymeshlab.PercentageValue(2),            # Distancia máxima para buscar puntos de muestra
     textname='transferred_texture.png',  # Nombre del archivo de textura a generar
     textw=1024,                 # Ancho de la textura
     texth=1024,                 # Altura de la textura
-    overwrite=True,             # Sobrescribir la textura existente en la malla objetivo
+    overwrite=False,             # Sobrescribir la textura existente en la malla objetivo
     pullpush=True               # Llenar los espacios vacíos con el algoritmo pull-push
 )
 
 # Guardar la malla objetivo con la textura aplicada
 output_mesh_file = 'target_mesh_with_texture.ply'
-ms.save_current_mesh(output_mesh_file)
+ms.save_current_mesh(
+    file_name=output_mesh_file,
+    binary=False,                # Formato binario
+    save_vertex_color = False,
+    save_vertex_coord=True,     # Guardar coordenadas de vértices
+    save_wedge_texcoord=True    # Guardar coordenadas UV
+)
 
 print(f"Malla objetivo con la textura transferida guardada en {output_mesh_file}")
 

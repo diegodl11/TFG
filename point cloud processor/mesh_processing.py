@@ -1,0 +1,331 @@
+# Importa la biblioteca PyMeshLab
+import pymeshlab
+
+import numpy as np
+import os
+from mesh_functions import *
+
+#nombre de la carpeta de archivos temporales como variabe global
+folder_name  = "generated files/"
+
+def repair_mesh(ms, hole_size, file_name):
+    """
+    Realiza un proceso de reparación en la malla usando los métodos de PyMeshLab.
+    
+    Argumentos:
+    ms: PyMeshLab.MeshSet
+        Conjunto de mallas cargado con PyMeshLab.
+    """
+    # Verificar si la malla tiene caras
+    if ms.current_mesh().face_number() == 0:
+        print("Error: La malla no tiene caras.")
+        return None
+    holes=None
+
+    check_mesh_repaired = False
+    
+    while not check_mesh_repaired:
+        # Suponemos que la malla está reparada hasta encontrar un problema
+        check_mesh_repaired = True
+        
+        # Seleccionar caras pequeñas desconectadas y eliminarlas
+        ms.compute_selection_by_small_disconnected_components_per_face()
+        if ms.current_mesh().selected_face_number() > 0:
+            ms.meshing_remove_selected_faces()
+            check_mesh_repaired = False
+
+        # Seleccionar caras problemáticas, dilatar selección y eliminarlas
+        ms.compute_selection_bad_faces()
+        ms.apply_selection_dilatation()
+        if ms.current_mesh().selected_face_number() > 0:
+            ms.meshing_remove_selected_faces()
+            check_mesh_repaired = False
+
+        # Seleccionar caras con bordes no manifold, dilatar selección y eliminarlas
+        ms.compute_selection_by_non_manifold_edges_per_face()
+        ms.apply_selection_dilatation()
+        if ms.current_mesh().selected_face_number() > 0:
+            ms.meshing_remove_selected_faces()
+            check_mesh_repaired = False
+
+        # Seleccionar caras con autointersecciones, dilatar selección y eliminarlas
+        ms.compute_selection_by_self_intersections_per_face()
+        ms.apply_selection_dilatation()
+        if ms.current_mesh().selected_face_number() > 0:
+            ms.meshing_remove_selected_faces()
+            check_mesh_repaired = False
+
+        # Seleccionar vértices no manifold y eliminarlos
+        ms.compute_selection_by_non_manifold_per_vertex()
+        #print("Número de non mainfold per vertex: " + str(ms.current_mesh().selected_face_number()))
+        if ms.current_mesh().selected_vertex_number() > 0:
+            ms.meshing_remove_selected_vertices()
+            check_mesh_repaired = False
+        
+        previous_holes = holes
+        # Cerrar agujeros pequeños
+        holes = ms.meshing_close_holes(maxholesize=hole_size)
+        print(f"Número de agujeros cerrados: {holes}")
+
+        #esto es necesario porque a veces crea agujeros con problemas
+        #pero no hay ninguna forma de arreglar esos problemas
+        #entonces no para de crear agujeros con problemas
+        #continuamente de manera infinita
+        if previous_holes == holes:
+            check_mesh_repaired =True
+    
+    
+    output_file =file_name
+    output_file = save_mesh(ms, output_file)
+    
+    #devolverlo con la coma lo mantiene como un argumento separado y así no 
+    #cuenta cada caracter como un argumentos
+    return (output_file,)
+#comprueba si la malla está reparada antes de usar el filtro de voronoia atlas
+def check_mesh_repaired(ms):
+    ms.compute_selection_by_small_disconnected_components_per_face()
+    if ms.current_mesh().selected_face_number() > 0:
+        return False
+    ms.compute_selection_bad_faces()
+    if ms.current_mesh().selected_face_number() > 0:
+        return False
+    ms.compute_selection_by_non_manifold_edges_per_face()
+    if ms.current_mesh().selected_face_number() > 0:
+        return False
+    ms.compute_selection_by_self_intersections_per_face()
+    if ms.current_mesh().selected_face_number() > 0:
+        return False
+    ms.compute_selection_by_non_manifold_per_vertex()
+    if ms.current_mesh().selected_face_number() > 0:
+        return False
+    return True
+def load_ply(ms, file_name):
+    if not os.path.exists(file_name):
+        print(f"Archivo no encontrado: {file_name}")
+    ms.load_new_mesh(file_name)
+    mscount = ms.mesh_number() 
+    print(mscount)
+    #print("Nube de puntos cargada con éxito.")
+
+def surface_reconstruction(ms, octree_depth=8):
+
+    if ms.current_mesh().face_number()> 0:
+            print("Error: La malla ya tiene caras.")
+            return None
+
+    try:
+        ms.apply_filter(
+            'generate_surface_reconstruction_screened_poisson',
+            visiblelayer=False,    # Usar todas las capas visibles
+            depth=octree_depth,               # Profundidad máxima del octree
+            fulldepth=5,           # Profundidad adaptativa del octree
+            cgdepth=0,             # Profundidad para el solver de gradientes conjugados
+            scale=1.1,             # Factor de escala
+            samplespernode=1.5,    # Muestras mínimas por nodo
+            pointweight=4,         # Peso de interpolación
+            iters=8,               # Iteraciones de relajación de Gauss-Seidel
+            confidence=False,      # No usar la calidad como confianza
+            preclean=False,        # No limpiar previamente
+            threads=16             # Número de hilos a usar
+        )
+    except Exception as e:
+        print(f"Error en la reconstrucción de superficie: {e}")
+    output_file ='screened_poisson.ply'
+    output_file = save_mesh(ms, output_file)
+    
+    #devolverlo con la coma lo mantiene como un argumento separado y así no 
+    #cuenta cada caracter como un argumentos
+    return (output_file,)
+
+def remove_huge_unused_faces(ms):
+    """
+    Elimina caras demasiado grandes generadas en la reconstrucción de la superficie.
+    Se pueden eliminar sábanas
+    """
+    try:
+        # Verificar si la malla tiene caras
+        if ms.current_mesh().face_number() == 0:
+            print("Error: La malla no tiene caras.")
+            return None
+
+        # Calcular una longitud promedio de los lados de la malla
+        average_edge_length = ms.current_mesh().bounding_box().diagonal() / 100
+        print(f"Longitud promedio de las aristas (estimada): {average_edge_length}")
+
+        # Seleccionar caras con lados grandes y eliminarlas
+        ms.compute_selection_by_edge_length(threshold=average_edge_length)
+        ms.meshing_remove_selected_faces()
+
+        # Guardar la malla procesada
+        output_file = "huge_faces_removed.ply"
+        output_file = save_mesh(ms, output_file)
+
+        # Devolver como tupla (para evitar que Python lo trate como caracteres separados)
+        return (output_file,)
+
+    except AttributeError as e:
+        print(f"Error: No se pudo acceder a la malla actual. {e}")
+        return None
+
+
+
+def compute_normals_if_necessary(ms,has_normals, has_faces,file_name):
+    #solo usar este método si la nube de puntos no tiene normales y es efectivamente una
+    #nube de puntos
+    if not has_normals and not has_faces:  
+        filename_sin_ext, _ = os.path.splitext(file_name)
+        output_file = filename_sin_ext + "_with_normals.ply"
+        try:
+            #filtro para crear las normales en una malla
+            normal_filter(file_name, output_file) 
+            load_ply(ms, output_file)
+            #remover el archivo temporal de normales 
+            os.remove(output_file)
+            #cambiar la malla a binario y añadirla al meshset
+            output_file = save_mesh(ms, output_file)
+            
+    
+            #retornamos el mesh id para saber qué nube de puntos utilizar para la textura
+            return (output_file,)
+        except FileNotFoundError:
+            print(f"Error: El archivo {file_name} no fue encontrado.")
+        except PermissionError:
+            print(f"Error: No tienes permisos para acceder a {file_name}.")
+        except Exception as e:
+            print(f" Ocurrió un error inesperado: {e}")
+        return None
+    else:
+        print(" La nube de puntos ya tiene normales o no es una nube de puntos.")
+        return None
+# como va a haber casos en los que usemos un mismo método mas veces, vamos a crear una funcion
+# #que nos genere un nombre de archivo unico cada vez que usemos ese método
+def get_unique_filename(folder_path, filename):
+    """Si el archivo ya existe en la carpeta, añade un número incremental al final."""
+    name, ext = os.path.splitext(filename)  # Separar nombre y extensión
+    counter = 1
+    new_filename = filename  # Nombre inicial
+
+    while os.path.exists(os.path.join(folder_path, new_filename)):
+        new_filename = f"{name}_{counter}{ext}"  # Añadir número antes de la extensión
+        counter += 1
+
+    return new_filename
+
+def save_mesh(ms, output_file, save_v_color = True, save_UV=False):
+     
+    
+    # Crear la carpeta si no existe
+    folder_path = os.path.join(os.getcwd(), folder_name)  # Ruta absoluta
+    os.makedirs(folder_path, exist_ok=True)
+    # Unir la carpeta con el nombre del archivo
+    # Obtener un nombre único si el archivo ya existe
+    unique_filename = get_unique_filename(folder_path, os.path.basename(output_file))
+    output_file = os.path.join(folder_path, os.path.basename(unique_filename))
+    ms.save_current_mesh(
+        file_name=output_file,
+        binary=False,  # Guarda en formato binario (más compacto y compatible)
+        save_vertex_quality = False,
+        save_vertex_color = save_v_color,
+        save_vertex_normal  = True,
+        save_wedge_texcoord=save_UV    # Guardar coordenadas UV
+
+    )
+    
+    return output_file
+
+def mesh_simplification(ms, target_num_of_faces):
+    if ms.current_mesh().face_number() == 0:
+        print("Error: La malla no tiene caras.")
+        return None
+    try:
+        ms.apply_filter(
+            'meshing_decimation_quadric_edge_collapse',
+            targetfacenum=target_num_of_faces,         # Número deseado de caras finales
+            targetperc=0,             # Porcentaje de reducción (0.5 significa 50%)
+            qualitythr=0.3,             # Umbral de calidad para penalizar caras mal formadas
+            preserveboundary=True,      # Preservar los bordes de la malla
+            boundaryweight=1,         # Peso adicional para preservar bordes
+            preservenormal=True,        # Preservar la orientación de las normales
+            preservetopology=True,      # Mantener la topología de la malla
+            optimalplacement=True,      # Colocación óptima de vértices simplificados
+            planarquadric=True,         # Mejora simplificación en áreas planas
+            planarweight=0.001,         # Peso de simplificación en regiones planas
+            qualityweight=False,        # No usar la calidad de los vértices como peso
+            autoclean=True,             # Limpieza post-simplificación
+            selected=False              # Aplicar simplificación a toda la malla
+        )
+    except Exception as e:
+        print(f"Error en la reconstrucción de superficie: {e}")
+
+    output_file ='simplified_mesh.ply'
+    output_file = save_mesh(ms, output_file)
+    
+    #devolverlo con la coma lo mantiene como un argumento separado y así no 
+    #cuenta cada caracter como un argumentos
+    return (output_file,)
+
+
+def voronoi_atlas(ms, file_name):
+
+    #comprobar antes de aplicar este filtro que la malla esté reparada
+    if check_mesh_repaired(ms) == False:
+        print("Error: La malla no ha sido reparada")
+        return None
+    if ms.current_mesh().face_number() == 0:
+        print("Error: La malla no tiene caras.")
+        return None
+
+  
+    output_file=  "voronoi_atlas.ply"
+    try:
+        voronoi_atlas_parametrization( input_file=file_name, output_file=output_file)
+        load_ply(ms, output_file)
+        #remover el archivo temporal de normales 
+        os.remove(output_file)
+        #cambiar la malla a binario y añadirla al meshset
+        output_file = save_mesh(ms, output_file, True, True)
+        
+        
+
+        #retornamos el mesh id para saber cuál es la malla voronoi atlas para la textura utilizar para la textura
+        return (output_file,)
+    except Exception as e:
+        print(f"Ocurrió un error: {e}")
+        return None
+
+def transfer_attributes_to_texture_per_vertex(ms, point_cloud_id, voronoi_id, texture_name):
+    print("aa")
+    if ms.current_mesh().face_number() == 0:
+        print("Error: La malla no tiene caras.")
+        return None
+    uv_check = ms.current_mesh().has_wedge_tex_coord()
+    if not uv_check:
+        print("Error: La malla no tiene coordenadas de textura.")
+        return None
+    try:
+        ms.apply_filter(
+            'transfer_attributes_to_texture_per_vertex',
+            sourcemesh=point_cloud_id,               # Índice de la malla fuente (nube de puntos)
+            targetmesh=voronoi_id,               # Índice de la malla objetivo
+            attributeenum='Vertex Color',  # Atributo a transferir (e.g., Vertex Color, Vertex Normal)
+            upperbound= pymeshlab.PercentageValue(2),            # Distancia máxima para buscar puntos de muestra
+            textname=texture_name,  # Nombre del archivo de textura a generar
+            textw=1024,                 # Ancho de la textura
+            texth=1024,                 # Altura de la textura
+            overwrite=False,             # Sobrescribir la textura existente en la malla objetivo
+            pullpush=True               # Llenar los espacios vacíos con el algoritmo pull-push
+        )
+
+        #guardamos la malal sin colores de vértices porque ya no los necesoitamos
+        output_file ='target_mesh_with_texture.ply'
+        output_file = save_mesh(ms, output_file, False, True)
+        # Crear la carpeta si no existe
+
+        
+        folder_path = os.path.join(os.getcwd(), folder_name)  # Ruta absoluta
+        os.makedirs(folder_path, exist_ok=True)
+        # Unir la carpeta con el nombre del archivo
+        texture_name = os.path.join(folder_path, os.path.basename(texture_name))
+        return(output_file, texture_name)
+    except Exception as e:
+        print(f"Ocurrió un error: {e}")

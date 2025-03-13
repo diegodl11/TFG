@@ -5,7 +5,7 @@ import numpy as np
 import ctypes
 from plyfile import PlyData
 from PIL import Image
-import time
+import os
 
 
 
@@ -480,7 +480,7 @@ class PlyViewer(QOpenGLWidget):
     def set_texture(self, texture_path):
         self.texture_path = texture_path
 
-    def load_ply(self, filename, texture_path= None):
+    def load_ply(self, filename):
         #aseguramos que todos los atributos de la malla estén inicializados a None
         #esto es porque si cambia la malla que estamos usando y pasamos de que esa malla
         #tiene caras a no tener caras pues la visualización va a usar las caras de la anterior
@@ -490,8 +490,16 @@ class PlyViewer(QOpenGLWidget):
         self.faces = None
         self.texcoords = None
         self.texture = None
-        self.texture_path = texture_path
         ply = PlyData.read(filename)
+        
+        #hay ocasiones en las que introducimos archivos con textura 
+        for comment in ply.comments:
+            
+            if comment.startswith("TextureFile"):
+                folder = os.path.dirname(filename)  # Obtiene la carpeta donde está el PLY
+                texture_name= comment.split(" ", 1)[1]  # Extrae el nombre después de "TextureFile"
+                self.texture_path = os.path.join(folder, texture_name)  # Une carpeta + nombre de textura
+                
         
         self.vertices = np.array([(v['x'], v['y'], v['z']) for v in ply['vertex']], dtype=np.float32)
         
@@ -553,8 +561,13 @@ class PlyViewer(QOpenGLWidget):
             self.texcoords = np.array(new_texcoords, dtype=np.float32)
             self.faces = np.array(new_faces, dtype=np.uint32)
         #en caso de que esa malla tenga textura inicailizarla
+       
         if self.texture_path:
-            self.load_texture()
+            if os.path.exists(self.texture_path):
+                self.load_texture()
+            else:
+                print("No se ha encontrado el archivo de textura de esta malla")
+            
         self.init_opengl() 
         self.load_shaders()
         
@@ -597,7 +610,9 @@ class PlyViewer(QOpenGLWidget):
         
         #  Creo el VAO aquí porque cada vez que se carga una malla nueva no se compilan bien los shaders
         #  creando un nuevo VAO fuerzo a que se actualicen lo shaders
-       
+        #  elimino el VAO anterior para que no se acumulen los VAOs
+        if self.VAO is not None:
+            glDeleteVertexArrays(1, [self.VAO])
         self.VAO = glGenVertexArrays(1) #creamos el VAO aquí porque no se va a modificar durante todo el programa
 
         self.clear_buffer_if_not_empty(self.VBO)

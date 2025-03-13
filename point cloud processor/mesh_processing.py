@@ -2,6 +2,7 @@
 import pymeshlab
 
 import numpy as np
+import multiprocessing
 import os
 from mesh_functions import *
 
@@ -18,7 +19,7 @@ def repair_mesh(ms, hole_size, file_name):
     """
     # Verificar si la malla tiene caras
     if ms.current_mesh().face_number() == 0:
-        print("Error: La malla no tiene caras.")
+        print("Error: current mesh has not faces")
         return None
     holes=None
 
@@ -65,7 +66,7 @@ def repair_mesh(ms, hole_size, file_name):
         previous_holes = holes
         # Cerrar agujeros pequeños
         holes = ms.meshing_close_holes(maxholesize=hole_size)
-        print(f"Número de agujeros cerrados: {holes}")
+        print(f"Number of closed holes: {holes}")
 
         #esto es necesario porque a veces crea agujeros con problemas
         #pero no hay ninguna forma de arreglar esos problemas
@@ -80,7 +81,7 @@ def repair_mesh(ms, hole_size, file_name):
     
     #devolverlo con la coma lo mantiene como un argumento separado y así no 
     #cuenta cada caracter como un argumentos
-    return (output_file,)
+    return output_file
 #comprueba si la malla está reparada antes de usar el filtro de voronoia atlas
 def check_mesh_repaired(ms):
     ms.compute_selection_by_small_disconnected_components_per_face()
@@ -101,16 +102,16 @@ def check_mesh_repaired(ms):
     return True
 def load_ply(ms, file_name):
     if not os.path.exists(file_name):
-        print(f"Archivo no encontrado: {file_name}")
+        print(f"File not founded: {file_name}")
     ms.load_new_mesh(file_name)
-    mscount = ms.mesh_number() 
-    print(mscount)
+    #mscount = ms.mesh_number() 
+    #print(mscount)
     #print("Nube de puntos cargada con éxito.")
 
 def surface_reconstruction(ms, octree_depth=8):
 
     if ms.current_mesh().face_number()> 0:
-            print("Error: La malla ya tiene caras.")
+            print("Error: Current mesh has no faces")
             return None
 
     try:
@@ -129,13 +130,13 @@ def surface_reconstruction(ms, octree_depth=8):
             threads=16             # Número de hilos a usar
         )
     except Exception as e:
-        print(f"Error en la reconstrucción de superficie: {e}")
+        print(f"Error on the surface reconstruction: {e}")
     output_file ='screened_poisson.ply'
     output_file = save_mesh(ms, output_file)
     
     #devolverlo con la coma lo mantiene como un argumento separado y así no 
     #cuenta cada caracter como un argumentos
-    return (output_file,)
+    return output_file
 
 def remove_huge_unused_faces(ms):
     """
@@ -145,12 +146,12 @@ def remove_huge_unused_faces(ms):
     try:
         # Verificar si la malla tiene caras
         if ms.current_mesh().face_number() == 0:
-            print("Error: La malla no tiene caras.")
+            print("Error: current mesh has no faces.")
             return None
 
         # Calcular una longitud promedio de los lados de la malla
         average_edge_length = ms.current_mesh().bounding_box().diagonal() / 100
-        print(f"Longitud promedio de las aristas (estimada): {average_edge_length}")
+        print(f"Average edge length (estimated): {average_edge_length}")
 
         # Seleccionar caras con lados grandes y eliminarlas
         ms.compute_selection_by_edge_length(threshold=average_edge_length)
@@ -161,10 +162,10 @@ def remove_huge_unused_faces(ms):
         output_file = save_mesh(ms, output_file)
 
         # Devolver como tupla (para evitar que Python lo trate como caracteres separados)
-        return (output_file,)
+        return output_file
 
     except AttributeError as e:
-        print(f"Error: No se pudo acceder a la malla actual. {e}")
+        print(f"Error: could not be possible to access the current mesh. {e}")
         return None
 
 
@@ -186,16 +187,16 @@ def compute_normals_if_necessary(ms,has_normals, has_faces,file_name):
             
     
             #retornamos el mesh id para saber qué nube de puntos utilizar para la textura
-            return (output_file,)
+            return (output_file, )
         except FileNotFoundError:
-            print(f"Error: El archivo {file_name} no fue encontrado.")
+            print(f"Error: File {file_name} wasn't found.")
         except PermissionError:
-            print(f"Error: No tienes permisos para acceder a {file_name}.")
+            print(f"Error: You got no permissions to access {file_name}.")
         except Exception as e:
-            print(f" Ocurrió un error inesperado: {e}")
+            print(f" An unexpected error occurred: {e}")
         return None
     else:
-        print(" La nube de puntos ya tiene normales o no es una nube de puntos.")
+        print(" Either the point cloud already has normals or it is not a point cloud.")
         return None
 # como va a haber casos en los que usemos un mismo método mas veces, vamos a crear una funcion
 # #que nos genere un nombre de archivo unico cada vez que usemos ese método
@@ -217,6 +218,7 @@ def save_mesh(ms, output_file, save_v_color = True, save_UV=False):
     # Crear la carpeta si no existe
     folder_path = os.path.join(os.getcwd(), folder_name)  # Ruta absoluta
     os.makedirs(folder_path, exist_ok=True)
+  
     # Unir la carpeta con el nombre del archivo
     # Obtener un nombre único si el archivo ya existe
     unique_filename = get_unique_filename(folder_path, os.path.basename(output_file))
@@ -235,7 +237,7 @@ def save_mesh(ms, output_file, save_v_color = True, save_UV=False):
 
 def mesh_simplification(ms, target_num_of_faces):
     if ms.current_mesh().face_number() == 0:
-        print("Error: La malla no tiene caras.")
+        print("Error: Mesh has no faces.")
         return None
     try:
         ms.apply_filter(
@@ -255,52 +257,78 @@ def mesh_simplification(ms, target_num_of_faces):
             selected=False              # Aplicar simplificación a toda la malla
         )
     except Exception as e:
-        print(f"Error en la reconstrucción de superficie: {e}")
+        print(f"Error in surface reconstruction: {e}")
 
     output_file ='simplified_mesh.ply'
     output_file = save_mesh(ms, output_file)
     
     #devolverlo con la coma lo mantiene como un argumento separado y así no 
     #cuenta cada caracter como un argumentos
-    return (output_file,)
+    return output_file
 
+def run_voronoi_with_timeout(input_file, output_file, timeout=15):
+    """
+    Ejecuta voronoi_atlas_parametrization con un límite de tiempo.
+    Si el tiempo se excede, el proceso se detiene.
+    """
+    def target():
+        try:
+            voronoi_atlas_parametrization(input_file=input_file, output_file=output_file)
+        except Exception as e:
+            print(f"Error in voronoi_atlas_parametrization: {e}")
+
+    # Crear proceso
+    process = multiprocessing.Process(target=target)
+    process.start()
+    process.join(timeout)  # Esperar hasta 'timeout' segundos
+
+    if process.is_alive():
+        print("Voronoi Atlas stuck in infinite loop. Processing is ending...")
+        process.terminate()  # Detener el proceso
+        process.join()  # Asegurar que el proceso finalizó
+        return False  # Indica que falló por timeout
+    
+    return True  # Indica que terminó correctamente
 
 def voronoi_atlas(ms, file_name):
 
     #comprobar antes de aplicar este filtro que la malla esté reparada
     if check_mesh_repaired(ms) == False:
-        print("Error: La malla no ha sido reparada")
+        print("Error: The mesh has not been repaired")
         return None
     if ms.current_mesh().face_number() == 0:
-        print("Error: La malla no tiene caras.")
+        print("Error: Mesh has no faces.")
         return None
 
   
     output_file=  "voronoi_atlas.ply"
     try:
-        voronoi_atlas_parametrization( input_file=file_name, output_file=output_file)
+        success = run_voronoi_with_timeout(input_file=file_name, output_file=output_file, timeout=15)
+        
+        if not success:
+            print("Error: Voronoi Atlas did not finish in the expected time. You can try changing some variables in the right panel and redo the steps.")
+            return None, False
         load_ply(ms, output_file)
         #remover el archivo temporal de normales 
         os.remove(output_file)
-        #cambiar la malla a binario y añadirla al meshset
+        #Guardar malla
         output_file = save_mesh(ms, output_file, True, True)
-        
-        
+   
 
         #retornamos el mesh id para saber cuál es la malla voronoi atlas para la textura utilizar para la textura
-        return (output_file,)
+        return (output_file, True)
     except Exception as e:
-        print(f"Ocurrió un error: {e}")
-        return None
+        print(f"An error occurred: {e}")
+        return None, False
 
 def transfer_attributes_to_texture_per_vertex(ms, point_cloud_id, voronoi_id, texture_name):
-    print("aa")
+   
     if ms.current_mesh().face_number() == 0:
-        print("Error: La malla no tiene caras.")
+        print("Error: Current mesh has not faces")
         return None
     uv_check = ms.current_mesh().has_wedge_tex_coord()
     if not uv_check:
-        print("Error: La malla no tiene coordenadas de textura.")
+        print("Error: current mesh has not texture coordinates")
         return None
     try:
         ms.apply_filter(
@@ -319,13 +347,7 @@ def transfer_attributes_to_texture_per_vertex(ms, point_cloud_id, voronoi_id, te
         #guardamos la malal sin colores de vértices porque ya no los necesoitamos
         output_file ='target_mesh_with_texture.ply'
         output_file = save_mesh(ms, output_file, False, True)
-        # Crear la carpeta si no existe
-
         
-        folder_path = os.path.join(os.getcwd(), folder_name)  # Ruta absoluta
-        os.makedirs(folder_path, exist_ok=True)
-        # Unir la carpeta con el nombre del archivo
-        texture_name = os.path.join(folder_path, os.path.basename(texture_name))
-        return(output_file, texture_name)
+        return output_file
     except Exception as e:
-        print(f"Ocurrió un error: {e}")
+        print(f"An error ocurred: {e}")

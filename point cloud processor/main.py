@@ -1,8 +1,8 @@
 import sys
 from mesh_processing import *
-from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout, QApplication, QFileDialog, QLineEdit, QMainWindow, QAction, QVBoxLayout, QWidget, QDialog
+from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout, QApplication, QFileDialog, QLineEdit, QMainWindow, QAction, QVBoxLayout, QWidget, QDialog, QTextEdit
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPalette, QColor
+from PyQt5.QtGui import QTextCursor
 from ply_viewer_class import PlyViewer
 #pilsa que usaremos para ir hacia atrás y hacia alante
 from stack import Stack
@@ -80,6 +80,17 @@ class TransparentGraph(QWidget):
             self.dragging = True
             self.last_pos = event.globalPos()
 
+class OutputStream:
+    """ Clase para redirigir stdout a QTextEdit """
+    def __init__(self, text_widget):
+        self.text_widget = text_widget
+
+    def write(self, text):
+        self.text_widget.append(text.strip())  # Agrega texto a la terminal
+        self.text_widget.ensureCursorVisible()  # Asegura que el scroll baje
+
+    def flush(self):
+        pass  # No es necesario en este caso
 
 class MainApp(QMainWindow):
     def __init__(self):
@@ -88,7 +99,7 @@ class MainApp(QMainWindow):
 
     def init_ui(self):
 
-        self.setWindowTitle("Visor de PLY")
+        self.setWindowTitle("PLY viewer and processor")
         self.setGeometry(100, 0, 1100, 800)  # Tamaño inicial de la ventana
 
         #stack para ir hacia detrás
@@ -127,9 +138,29 @@ class MainApp(QMainWindow):
 
         # Crear barra de menú
         menubar = self.menuBar()
-        file_menu = menubar.addMenu("Archivo")
+        file_menu = menubar.addMenu("File")
         self.processing_menu = menubar.addMenu("Mesh processing")
         
+        #procesos de reparación de la malla
+        self.normals_created = QLabel("Normals Created") #0
+
+        self.screened_poisson_done = QLabel("Screened posisson filter") #1
+       
+        self.huge_faces_removed = QLabel("Huge faces removed") #2
+   
+        self.mesh_repaired_done = QLabel("Mesh repaired after" + "\n"+"screened poisson") #3
+
+        #esto lo añado para que cuando vaya a reparar la malla por segunda vez, se llame al metodo correcto
+        self.simplified_mesh_done_check=False
+        self.simplified_mesh_done = QLabel("Mesh simplified") #4
+   
+        self.mesh_repaired2_done = QLabel("Mesh repaired after" + "\n" + "mesh simplification") #5
+
+        self.voronoi_done = QLabel("Voronoi atlas filter aplied") #6
+
+        self.added_texture_done = QLabel("Texture mesh generated") #7
+      
+
         """
         Añadimos todo los necesario para poder introducir el hole_size y el
         octree_depth
@@ -147,9 +178,12 @@ class MainApp(QMainWindow):
         self.target_faces_input = QLineEdit("10000")
 
         # ** Botón de aplicar **
-        self.apply_button = QPushButton("Aplicar")
+        self.apply_button = QPushButton("Apply")
         self.apply_button.clicked.connect(lambda: self.label_values(self.hole_size_input, self.octree_input, self.target_faces_input))
 
+        # ** Botón para hacer el proceso automáticamente **
+        self.process_mesh_button = QPushButton("Process mesh")
+        self.process_mesh_button.clicked.connect(lambda: self.set_processing_button())
         # ** Layout derecho (inputs y botón) **
         self.right_panel = QVBoxLayout()
         self.right_panel.addWidget(self.hole_size_label)
@@ -161,6 +195,15 @@ class MainApp(QMainWindow):
         self.right_panel.addWidget(self.apply_button)
         self.right_panel.addWidget(self.back_button)
         self.right_panel.addWidget(self.forward_button)
+        self.right_panel.addWidget(self.process_mesh_button)
+        self.right_panel.addWidget(self.normals_created)
+        self.right_panel.addWidget(self.screened_poisson_done)
+        self.right_panel.addWidget(self.huge_faces_removed)
+        self.right_panel.addWidget(self.mesh_repaired_done)
+        self.right_panel.addWidget(self.simplified_mesh_done)
+        self.right_panel.addWidget(self.mesh_repaired2_done)
+        self.right_panel.addWidget(self.voronoi_done)
+        self.right_panel.addWidget(self.added_texture_done)
         self.right_panel.addStretch()  # Empuja todo hacia arriba
 
         # ** Widget contenedor derecho (le ponemos un ancho fijo) **
@@ -168,36 +211,69 @@ class MainApp(QMainWindow):
         self.right_widget.setLayout(self.right_panel)
         self.right_widget.setFixedWidth(200)  # Limita el ancho del panel derecho
 
-         # ** Layout principal con visor y panel derecho **
-        self.main_layout = QHBoxLayout()
 
         # Opción de "Cargar PLY"
-        load_action = QAction("Cargar PLY", self)
+        load_action = QAction("Load PLY", self)
         load_action.triggered.connect(self.load_ply)
         file_menu.addAction(load_action)
 
          # Opción de "Mostrar Coordenadas de Textura"
-        texcoord_action = QAction("Ver TexCoords", self)
+        texcoord_action = QAction("See TexCoords", self)
         texcoord_action.triggered.connect(self.toggle_texcoords)
         file_menu.addAction(texcoord_action)
+
+        #opción para guardar un ply
+        saveply_action = QAction("Save file", self)
+        saveply_action.triggered.connect(self.save_ply)
+        file_menu.addAction(saveply_action)
 
         #archivo de salida de cada modificación en el meshset
         self.output_file = None
         
-
+        # ** Layout viewer con visor ply y panel derecho **
+        self.viewer = QHBoxLayout()
         # Crear el visor PLY y añadirlo debajo del gráfico
-        self.ply_viewer_class = PlyViewer()  # Se llama a initializeGL
-        self.main_layout.addWidget(self.ply_viewer_class)
+        self.ply_viewer_class = PlyViewer()  # Se llama a initializeGL  
+        self.viewer.addWidget(self.ply_viewer_class) 
+        self.viewer.addWidget(self.right_widget)  # Panel derecho
        
-        self.main_layout.addWidget(self.right_widget)  # Panel derecho
-        
+        # ** Terminal (QTextEdit para capturar `print`) **
+        self.terminal = QTextEdit()
+        self.terminal.setReadOnly(True)
+        #terminal con fondo negro
+        self.terminal.setStyleSheet("""
+            background-color: black;
+            color: white;
+            font-family: Consolas, Courier, monospace;
+            font-size: 12px;
+            border: none;
+        """)
+        self.terminal.setPlaceholderText("Terminal output...")
+        self.terminal.setFixedHeight(150)  # Fijar altura
+
+        # ** Widget contenedor de la terminal con layout **
+        self.down_widget = QWidget()
+        down_layout = QVBoxLayout(self.down_widget)
+        down_layout.addWidget(self.terminal)
+        down_layout.setContentsMargins(0, 0, 0, 0)  # Eliminar márgenes
+
+        # ** Configurar política de tamaño **
+        # se usa la del panel derecho porque ya está bien configurada
+        self.terminal.setSizePolicy(self.right_widget.sizePolicy())  
+
+        # ** Crear Layout principal en vertical (Visor arriba, Terminal abajo) **
+        self.main_layout = QVBoxLayout()
+         # ** Añadir el visor y la terminal al layout principal **
+        self.main_layout.addLayout(self.viewer)  # Arriba
+        self.main_layout.addWidget(self.down_widget)  # Abajo
 
         # Widget principal
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.central_widget.setLayout(self.main_layout)
+        # **Redirigir stdout a la terminal**
+        sys.stdout = OutputStream(self.terminal)
 
-       
         #crear el menú de procesamiento
         self.create_processing_menu()
         
@@ -213,18 +289,67 @@ class MainApp(QMainWindow):
         """
         super().resizeEvent(event)
         self.graph_window.move(self.width()-600, 10)  # Mueve el widget a la derecha
+    def save_ply(self):
+        
+        if not self.back.is_empty() :
+            #nombre por defecto del archivo
+            default_name="Untitled.ply"
+            #seleccionar archivo actual
+            file = self.back.peek()[0]
+            # Abrir diálogo para seleccionar dónde guardar el archivo
+            save_path, _ = QFileDialog.getSaveFileName(None, "Save file", default_name, "PLY Files (*.ply)")
+
+            if save_path:  # Si el usuario eligió una ruta
+                with open(file, "rb") as f_src, open(save_path, "wb") as f_dest:
+                    f_dest.write(f_src.read())  # Copiar contenido al nuevo destino
+                    if self.back.peek()[7]==7:
+                        texture_dir = os.path.dirname(file)  # Obtiene la carpeta donde está el archivo
+                        texture_path = os.path.join(texture_dir, self.texture_name)  # Une carpeta + nombre de textura
+                        
+                        # Nueva ruta donde guardar la textura
+                        save_texture_path = os.path.join(os.path.dirname(save_path), self.texture_name)
+
+                        # Verifica si el archivo de textura existe
+                        if os.path.exists(texture_path):
+                            with open(texture_path, "rb") as tex_file, open(save_texture_path, "wb") as tex_dest:
+                                tex_dest.write(tex_file.read())  # Copiar la textura a la carpeta de destino
+
+                print(f"File saved in: {save_path}")
+            else:
+                print("Saving canceled")
+        else:
+            print("There is not files to save")
+
 
     def load_ply(self):
-        self.file_path, _ = QFileDialog.getOpenFileName(self, "Abrir archivo PLY", "", "PLY Files (*.ply)")
+        self.file_path, _ = QFileDialog.getOpenFileName(self, "Opne PLY file", "", "PLY Files (*.ply)")
         if self.file_path:
             self.ply_viewer_class.load_ply(self.file_path)
             #mirar si la nube de puntos tiene normales
             self.has_normals = self.ply_viewer_class.has_normals()
             #mirar si la nube de puntos tiene caras, es decir, si no es una nube de puntos
             self.has_faces = self.ply_viewer_class.has_faces()
+
+            #reiniciar textos
+            self.normals_created.setText("Normals created ")
+            self.screened_poisson_done.setText("Screened posisson filter ")
+            self.huge_faces_removed.setText("Huge faces removed ")
+            self.mesh_repaired_done.setText("Mesh repaired after" + "\n"+"screened poisson " )
+            #poner esto a false cada vez que craguemos un ply
+            self.simplified_mesh_done_check=False
+            self.simplified_mesh_done.setText("Mesh simplified ")
+            self.mesh_repaired2_done.setText("Mesh repaired after" + "\n" + "mesh simplification ")   
+            self.voronoi_done.setText("Voronoi atlas filter aplied")
+            self.added_texture_done.setText("Texture mesh generated")
+
             #archivo inicial si la primera nube de puntos tiene normales
             if self.has_faces == 0 and self.has_normals >0:
                 self.point_cloud_name = self.file_path
+                self.normals_created.setText("Normals created \u2714")  # Añadir el tick
+                number = 0
+            else:
+                number = -1
+           
             #cargar ply en pymeshlab
             self.ms.clear() #cada nueva malla a cargar y procesar es un nuevo meshset
             #limpiar la carpeta de archivos tenporales cada vez que cargamos un nuevo ply
@@ -245,16 +370,17 @@ class MainApp(QMainWindow):
                 self.ply_viewer_class.colors,
                 self.ply_viewer_class.faces,
                 self.ply_viewer_class.texcoords,
-                self.ply_viewer_class.texture_path
+                self.ply_viewer_class.texture_path,
+                number
               ])
             
             #cada vez que cargo un ply quito el gráfico de las coordenadas de textura
             if self.graph_window.isVisible():
                 self.graph_window.setVisible(False)
     #esta función carga archivos ply del meshset de pymeshlab para la visualización
-    def load_processed_ply(self, file_name, texture_path=None):
+    def load_processed_ply(self, file_name):
         if file_name:
-            self.ply_viewer_class.load_ply(file_name, texture_path)
+            self.ply_viewer_class.load_ply(file_name)
             #cada vez que cargo un ply quito el gráfico de las coordenadas de textura
             if self.graph_window.isVisible():
                 self.graph_window.setVisible(False)
@@ -267,7 +393,52 @@ class MainApp(QMainWindow):
             if texcoords is not None and len(texcoords) > 0:
                 self.graph_window.plot_texcoords(texcoords)
             else:
-                print("No hay coordenadas de textura disponibles.")
+                print("No texture coordinates available.")
+    #botón para el procesamiento de la malla
+    def set_processing_button(self):
+        if self.file_path is not None:
+            if self.has_faces == False:
+          
+                if self.has_normals == False:
+                    self.set_output_file_normals(*compute_normals_if_necessary(self.ms, self.has_normals, self.has_faces, self.file_path))
+                    QApplication.processEvents()  # Permite actualizar la UI
+                self.apply_surface_reconstruction()
+                QApplication.processEvents()
+                self.apply_remove_huge_faces()
+                QApplication.processEvents()
+                self.apply_repair_mesh()
+                QApplication.processEvents()
+                self.apply_simplify_mesh()
+                QApplication.processEvents()
+                self.apply_repair_mesh()
+                QApplication.processEvents()
+                check_voronoi = self.apply_voronoi()
+                QApplication.processEvents()
+                number_of_faces = 15000
+                # en caso de que voronoi falle, cambiamos algunos parámetros
+                while not check_voronoi:
+                    print("Voronoi atlas failed, trying again with more faces for the mesh simplification")
+                    self.back_button_function()
+                    QApplication.processEvents()
+                    self.back_button_function()
+                    QApplication.processEvents()
+                    number_of_faces_aux = str(number_of_faces)
+                    self.target_faces_input.setText(number_of_faces_aux)
+                    self.target_faces = number_of_faces
+                    number_of_faces+=5000
+                    QApplication.processEvents()
+                    self.apply_simplify_mesh()
+                    QApplication.processEvents()
+                    self.apply_repair_mesh()
+                    QApplication.processEvents()
+                    check_voronoi = self.apply_voronoi()
+                    QApplication.processEvents()
+                self.safe_transfer_texture() 
+                
+            else:
+                print("To use this botton, you have to import a point cloud")
+        else:
+            print("There is not any file loaded")
     def create_processing_menu(self):
 
         #lambda nos permite llamar a la función solo cuando el botón sea pulsado
@@ -278,23 +449,23 @@ class MainApp(QMainWindow):
 
         surface_resconstruction = QAction("Generate surface reconstruction screened poisson", self)
         surface_resconstruction.triggered.connect(lambda: (
-            self.set_output_file(*surface_reconstruction(self.ms, self.octree_depth))))
+           self.apply_surface_reconstruction() ))
         self.processing_menu.addAction(surface_resconstruction)
 
         remove_huge_faces = QAction("Remove huge unused faces", self)      
         remove_huge_faces.triggered.connect(lambda:(
-            self.set_output_file(*remove_huge_unused_faces(self.ms))))
+            self.apply_remove_huge_faces()))
         self.processing_menu.addAction(remove_huge_faces)
         
 
         repair_mesh_action = QAction("Repair mesh", self)
         repair_mesh_action.triggered.connect(lambda:(
-        self.set_output_file(*repair_mesh(self.ms, self.hole_size, "repaired_mesh.ply"))))
+        self.apply_repair_mesh()))
         self.processing_menu.addAction(repair_mesh_action)
 
         simplify_mesh_action = QAction("Simplify mesh", self)
         simplify_mesh_action.triggered.connect(lambda:(
-        self.set_output_file(*mesh_simplification(self.ms, self.target_faces))))
+        self.apply_simplify_mesh()))
         self.processing_menu.addAction(simplify_mesh_action)
 
         
@@ -309,30 +480,33 @@ class MainApp(QMainWindow):
         self.safe_transfer_texture()))
         self.processing_menu.addAction(mesh_with_texture_action)
 
+    #función para la recnstucción de la superficie
+    def apply_surface_reconstruction(self):
+        output_file = surface_reconstruction(self.ms, self.octree_depth)
+        self.set_output_file(output_file, 1)
+    #remove huge faces funcion
+    def apply_remove_huge_faces(self):
+        output_file = remove_huge_unused_faces(self.ms)
+        self.set_output_file(output_file, 2)
+    def apply_repair_mesh(self):
+        output_file = repair_mesh(self.ms, self.hole_size, "repaired_mesh.ply")
+        if self.simplified_mesh_done_check ==False:
+            self.set_output_file(output_file, 3)
+        else:
+            self.set_output_file(output_file, 5)
+    def apply_simplify_mesh(self):
+        output_file = mesh_simplification(self.ms, self.target_faces)
+        self.set_output_file(output_file, 4)
+        self.simplified_mesh_done_check = True
+    
     #creamos una función para el botón de voronoi atlas
     def apply_voronoi(self):
-        #sacamos el nombre del último archivo de la pila
-        if self.ms is None:
-            print("Error: self.ms es None, evitando crash")
-            return
-
-        print(f"MeshSet contiene {self.ms.mesh_number()} mallas:")
-        meshes = []
         
-        for i in range(20):
-            if self.ms.mesh_id_exists(i):
-                meshes.append(i)  # Agrega el ID de la malla a la lista
-                
-        for i in meshes:  # Itera sobre los IDs válidos
-            try:
-                mesh = self.ms.mesh(i)
-                print(f"  Mesh {i}: {mesh}, vértices: {mesh.vertex_number()}, caras: {mesh.face_number()}")
-            except Exception as e:
-                print(f"  Error al acceder a la malla {i}: {e}")
-     
-        print(f"texture_name: {self.texture_name}")
         last_file = self.back.peek()[0]
-        self.set_output_file_voronoi(*voronoi_atlas(self.ms, last_file))
+        output_file, check_voronoi = voronoi_atlas(self.ms, last_file)      
+        self.set_output_file_voronoi(output_file)
+        return check_voronoi
+
     def safe_transfer_texture(self):
         self.ms.clear()
         load_ply(self.ms, self.point_cloud_name)
@@ -341,10 +515,10 @@ class MainApp(QMainWindow):
         load_ply(self.ms, self.voronoi_atlas_name)
         voronoi_atlas_id = self.ms.current_mesh_id()
         if self.ms is None:
-            print("Error: self.ms es None, evitando crash")
+            print("Error: self.ms is None, avoiding crash")
             return
 
-        print(f"MeshSet contiene {self.ms.mesh_number()} mallas:")
+        print(f"MeshSet contains {self.ms.mesh_number()} meshes:")
         meshes = []
         for i in range(20):
             if self.ms.mesh_id_exists(i):
@@ -353,27 +527,30 @@ class MainApp(QMainWindow):
         for i in meshes:  # Itera sobre los IDs válidos
             try:
                 mesh = self.ms.mesh(i)
-                print(f"  Mesh {i}: {mesh}, vértices: {mesh.vertex_number()}, caras: {mesh.face_number()}")
+                print(f"  Mesh {i}: {mesh}, vertex: {mesh.vertex_number()}, faces: {mesh.face_number()}")
             except Exception as e:
-                print(f"  Error al acceder a la malla {i}: {e}")
+                print(f"  Mesh access error {i}: {e}")
         print(f"point_cloud_id: {point_cloud_id}")
         print(f"voronoi_atlas_id: {voronoi_atlas_id}")
         print(f"texture_name: {self.texture_name}")
 
         if self.ms is None:
-            print("Error: Uno de los valores es None, evitando crash")
+            print("Error: one of the values is None, avoiding crash")
             return
 
-        self.set_output_file(*transfer_attributes_to_texture_per_vertex(self.ms, point_cloud_id, voronoi_atlas_id, self.texture_name))
+        output_file = transfer_attributes_to_texture_per_vertex(self.ms, point_cloud_id, voronoi_atlas_id, self.texture_name)
+        self.set_output_file(output_file,7)
     def set_output_file_normals(self, output_file):
-        if output_file:
+        if output_file is not None:
             self.output_file = output_file
             #siempre que haya un outputfile habrá una id
             self.point_cloud_name = self.output_file
             self.load_processed_ply(output_file)
             #añadimos el archivo al stack
             file_path_for_stack = self.output_file
+            self.normals_created.setText("Normals created \u2714") 
             
+            number = 0
             self.back.push([
                 file_path_for_stack, 
                 self.ply_viewer_class.vertices,
@@ -381,7 +558,8 @@ class MainApp(QMainWindow):
                 self.ply_viewer_class.colors,
                 self.ply_viewer_class.faces,
                 self.ply_viewer_class.texcoords,
-                self.ply_viewer_class.texture_path
+                self.ply_viewer_class.texture_path,
+                number
               ])
             #eliminamos lo anterior de forward
             while not self.forward.is_empty():
@@ -390,12 +568,12 @@ class MainApp(QMainWindow):
             self.ms.clear()
             # Recargar la malla en el MeshSet para que los cambios se reflejen
             load_ply(self.ms, file_path_for_stack)
-            print(f"Archivo con normales generado: {output_file}")
+            print(f"File with normals generated: {output_file}")
         else:
-            print("No se generó un nuevo archivo porque la nube de puntos ya tiene normales.")   
+            print("A new file was not generated because the point cloud already has normals.")   
 
     def set_output_file_voronoi(self, output_file):
-        if output_file:
+        if output_file is not None:
             self.output_file = output_file
             #siempre que haya un outputfile habrá una id
             
@@ -403,7 +581,8 @@ class MainApp(QMainWindow):
             self.load_processed_ply(output_file)
             #añadimos el archivo al stack
             file_path_for_stack = self.output_file
-            
+            self.voronoi_done.setText("Voronoi atlas filter aplied \u2714")
+            number = 6
             self.back.push([
                 file_path_for_stack, 
                 self.ply_viewer_class.vertices,
@@ -411,7 +590,8 @@ class MainApp(QMainWindow):
                 self.ply_viewer_class.colors,
                 self.ply_viewer_class.faces,
                 self.ply_viewer_class.texcoords,
-                self.ply_viewer_class.texture_path
+                self.ply_viewer_class.texture_path,
+                number
               ])
             #eliminamos lo anterior de forward
             while not self.forward.is_empty():
@@ -421,20 +601,31 @@ class MainApp(QMainWindow):
             # Recargar la malla en el MeshSet para que los cambios se reflejen
             load_ply(self.ms, file_path_for_stack)
            
-            print(f"Archivo voronoi atlas generado: {output_file}")
+            print(f"Voronoi atlas file generated: {output_file}")
         else:
-            print("No se generó un nuevo archivo.") 
+            print("No file voronoi atlas was created.") 
 
         
-    def set_output_file(self, output_file, texture_path=None):
+    def set_output_file(self, output_file, number):
         if output_file:
             self.output_file = output_file
             #siempre que haya un outputfile habrá una id
         
-            self.load_processed_ply(output_file, texture_path)
+            self.load_processed_ply(output_file)
             #añadimos el archivo al stack
             file_path_for_stack = self.output_file
-            
+            if number == 1:
+                self.screened_poisson_done.setText("Screened posisson filter \u2714")
+            elif number == 2:
+                self.huge_faces_removed.setText("Huge faces removed \u2714")
+            elif number == 3:
+                self.mesh_repaired_done.setText("Mesh repaired after" + "\n"+"screened poisson " + "\u2714" )
+            elif number == 4:
+                self.simplified_mesh_done.setText("Mesh simplified \u2714")
+            elif number == 5:
+                self.mesh_repaired2_done.setText("Mesh repaired after" + "\n" + "mesh simplification \u2714")   
+            elif number == 7:
+                self.added_texture_done.setText("Texture mesh generated \u2714")
             self.back.push([
                 file_path_for_stack, 
                 self.ply_viewer_class.vertices,
@@ -442,7 +633,8 @@ class MainApp(QMainWindow):
                 self.ply_viewer_class.colors,
                 self.ply_viewer_class.faces,
                 self.ply_viewer_class.texcoords,
-                self.ply_viewer_class.texture_path
+                self.ply_viewer_class.texture_path,
+                number
               ])
             #eliminamos lo anterior de forward
             while not self.forward.is_empty():
@@ -452,9 +644,9 @@ class MainApp(QMainWindow):
             # Recargar la malla en el MeshSet para que los cambios se reflejen
             load_ply(self.ms, file_path_for_stack)
            
-            print(f"Archivo generado: {output_file}")
+            print(f"File created: {output_file}")
         else:
-            print("No se generó un nuevo archivo.")   
+            print("No file was generated.")   
     #función para agregar valores a hole_size y a octree_depth con el fin de 
     def label_values(self, hole_input, octree_input, target_faces_input):
         try:
@@ -463,12 +655,12 @@ class MainApp(QMainWindow):
             self.target_faces = int(target_faces_input.text())
             print(f"Hole Size: {self.hole_size}, Octree Depth: {self.octree_depth}, Target number of faces: {self.target_faces}")
         except ValueError:
-            print("Error: Introduce valores numéricos válidos.")
+            print("Error: Introduce valid numeric values.")
     #para limpiar la carpeta de archivos que no utilizo cada vez que cargo un nuevo ply
     def clear_generated_files(self):
         #folder_name está definido como global en mesh processing
         if not os.path.exists(folder_name):  # Verificar si la carpeta existe
-            print(f"La carpeta '{folder_name}' no existe.")
+            print(f"Folder '{folder_name}' doesn't exists.")
             return
 
         for file in os.listdir(folder_name):  # Iterar sobre los archivos en la carpeta
@@ -476,16 +668,43 @@ class MainApp(QMainWindow):
             try:
                 if os.path.isfile(file_path):  # Eliminar solo archivos, no subdirectorios
                     os.remove(file_path)
-                    print(f"Eliminado: {file_path}")
+                    print(f"Removing: {file_path}")
             except Exception as e:
-                print(f"No se pudo eliminar {file_path}: {e}")
+                print(f"It was not possible to remove {file_path}: {e}")
 
-        print(f"Carpeta '{folder_name}' vaciada.")
+        print(f"Folder '{folder_name}' emptied.")
     def back_button_function(self):
         if not self.back.is_empty():
             file = self.back.pop()
            
             self.forward.push(file)
+            number=file[7]
+            #cambiar los textos
+            # a veces hago dos comprobaciones porque puede ser que por ejemplo, haya reparado la malla dos veces
+            #con agujeros de diferente tamaño
+            if number == 0:
+                self.normals_created.setText("Normals created ")
+            elif number == 1:
+                self.screened_poisson_done.setText("Screened posisson filter ")
+            elif number == 2:
+                if self.back.peek()[7] != 2:
+                    self.huge_faces_removed.setText("Huge faces removed ")
+            elif number == 3:
+                if self.back.peek()[7] != 3:
+                    self.mesh_repaired_done.setText("Mesh repaired after" + "\n"+"screened poisson " )
+            elif number == 4:
+                if self.back.peek()[7] != 4:
+                    self.simplified_mesh_done.setText("Mesh simplified ")
+                    self.simplified_mesh_done_check = False
+            elif number == 5:
+                if self.back.peek()[7] != 5:
+                    self.mesh_repaired2_done.setText("Mesh repaired after" + "\n" + "mesh simplification ")   
+            elif number == 6:
+                if self.back.peek()[7] != 6:
+                    self.voronoi_done.setText("Voronoi atlas filter aplied")
+            elif number == 7:
+                self.added_texture_done.setText("Texture mesh generated")
+            
             #borrar las mallas del mesh set
             self.ms.clear()
             if self.back.size() == 1:
@@ -516,6 +735,25 @@ class MainApp(QMainWindow):
             #limpiamos el meshset
             self.ms.clear()
             file = self.forward.pop()
+            number=file[7]
+            #cambiar los textos
+            if number == 0:
+                self.normals_created.setText("Normals created \u2714")
+            elif number == 1:
+                self.screened_poisson_done.setText("Screened posisson filter \u2714")
+            elif number == 2:       
+                    self.huge_faces_removed.setText("Huge faces removed \u2714")
+            elif number == 3:   
+                    self.mesh_repaired_done.setText("Mesh repaired after" + "\n"+"screened poisson \u2714" )
+            elif number == 4:   
+                    self.simplified_mesh_done.setText("Mesh simplified \u2714")
+                    self.simplified_mesh_done_check = True
+            elif number == 5:
+                    self.mesh_repaired2_done.setText("Mesh repaired after" + "\n" + "mesh simplification \u2714")   
+            elif number == 6:
+                    self.voronoi_done.setText("Voronoi atlas filter aplied \u2714")
+            elif number == 7:
+                self.added_texture_done.setText("Texture mesh generated \u2714")
             self.back.push(file)
             #el archivo actual a cargar
             attributes = self.back.peek()

@@ -397,7 +397,8 @@ class MainApp(QMainWindow):
     #botón para el procesamiento de la malla
     def set_processing_button(self):
         if self.file_path is not None:
-            if self.has_faces == False:
+            #he cambiado aquí has_faces por self.ply_viewer_class.has_faces() para que se alique a cualquier malla actual
+            if self.ply_viewer_class.has_faces() == False:
           
                 if self.has_normals == False:
                     self.set_output_file_normals(*compute_normals_if_necessary(self.ms, self.has_normals, self.has_faces, self.file_path))
@@ -436,7 +437,7 @@ class MainApp(QMainWindow):
                 self.safe_transfer_texture() 
                 
             else:
-                print("To use this botton, you have to import a point cloud")
+                print("To use this botton, cuurent mesh should be a point cloud")
         else:
             print("There is not any file loaded")
     def create_processing_menu(self):

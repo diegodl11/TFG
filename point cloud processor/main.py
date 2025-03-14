@@ -182,7 +182,7 @@ class MainApp(QMainWindow):
         self.apply_button.clicked.connect(lambda: self.label_values(self.hole_size_input, self.octree_input, self.target_faces_input))
 
         # ** Botón para hacer el proceso automáticamente **
-        self.process_mesh_button = QPushButton("Process mesh")
+        self.process_mesh_button = QPushButton("Process point cloud")
         self.process_mesh_button.clicked.connect(lambda: self.set_processing_button())
         # ** Layout derecho (inputs y botón) **
         self.right_panel = QVBoxLayout()
@@ -397,7 +397,7 @@ class MainApp(QMainWindow):
     #botón para el procesamiento de la malla
     def set_processing_button(self):
         if self.file_path is not None:
-            #he cambiado aquí has_faces por self.ply_viewer_class.has_faces() para que se alique a cualquier malla actual
+            #se hace la comprobación de si la malla actual del meshset es una nube de puntos
             if self.ply_viewer_class.has_faces() == False:
           
                 if self.has_normals == False:

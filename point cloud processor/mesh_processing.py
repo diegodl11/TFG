@@ -295,10 +295,10 @@ def voronoi_atlas(ms, file_name):
     #comprobar antes de aplicar este filtro que la malla esté reparada
     if check_mesh_repaired(ms) == False:
         print("Error: The mesh has not been repaired")
-        return None
+        return None, False
     if ms.current_mesh().face_number() == 0:
         print("Error: Mesh has no faces.")
-        return None
+        return None, False
 
   
     output_file=  "voronoi_atlas.ply"

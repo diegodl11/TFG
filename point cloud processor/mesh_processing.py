@@ -71,7 +71,7 @@ def repair_mesh(ms, hole_size, file_name):
         #esto es necesario porque a veces crea agujeros con problemas
         #pero no hay ninguna forma de arreglar esos problemas
         #entonces no para de crear agujeros con problemas
-        #continuamente de manera infinita
+        #continuamente de manera infinita. Con esto cortamos el bucle
         if previous_holes == holes:
             check_mesh_repaired =True
     

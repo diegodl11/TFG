@@ -134,7 +134,7 @@ class MainApp(QMainWindow):
         #Tamaño de los agujeros
         self.hole_size = 50
         #Número e caras objetivo cuando simplifico
-        self.target_faces = 10000
+        self.target_faces = 40000
 
         # Crear barra de menú
         menubar = self.menuBar()
@@ -166,7 +166,7 @@ class MainApp(QMainWindow):
         octree_depth
         """
         # ** Cuadro de texto para "Hole Size" **
-        self.hole_size_label = QLabel("Hole Size:")
+        self.hole_size_label = QLabel("Hole Size :")
         self.hole_size_input = QLineEdit("50")
 
         # ** Cuadro de texto para "Octree Depth" **

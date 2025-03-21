@@ -1,0 +1,11 @@
+
+
+la importacion de archivo importante hacer
+int ret= tri::io::ImporterPLY<MyMesh>::Open(startMesh,argv[1]);
+
+luego me he dado cuenta que hay una incongruencia en el número de vertices y caras en malla.nv y
+malla.fn. Estos son los vectores que almacenan el numero de vertices y caras reales. Pero si no se ha compactado la malla
+después de su eliminación, el número de vértices y caras de la malla va a ser mayor que el número real de caras y vértices
+
+Instrucción de compilación:
+g++ -std=c++17 -O3 -I./vcglib -I/usr/include/eigen3 dilataragujeros.cpp vcglib/wrap/ply/plylib.cpp -o dilatar_agujeros

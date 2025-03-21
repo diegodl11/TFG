@@ -1,0 +1,61 @@
+He encontrado el filtro en 
+
+https://github.com/cnr-isti-vclab/meshlab/blob/main/src/meshlabplugins/filter_meshing/meshfilter.cpp
+ buscar la implementacion de 
+FP_NORMAL_EXTRAPOLATION 
+
+compilar con la instrucción
+g++ -std=c++17 -I./vcglib -I/usr/include/eigen3 normals.cpp vcglib/wrap/ply/plylib.cpp -o normals
+
+REVISION DE PROBLEMAS
+- el programa tarda mucho, hay que añadir commpilacion -O3
+
+ g++ -std=c++17 -O3 -I./vcglib -I/usr/include/eigen3 normals.cpp vcglib/wrap/ply/plylib.cpp -o normals
+
+- el programa no calcula el color de los vertices, hay que cambiar la definición de "mymesh" para que guarde el color. El uso
+de vector_ocf hace que se pueda guardar mejor la información.
+inicial: 
+class MyVertex; 
+class MyEdge; 
+class MyFace;
+struct MyUsedTypes : public vcg::UsedTypes<vcg::Use<MyVertex>   ::AsVertexType,
+                                           vcg::Use<MyEdge>     ::AsEdgeType,
+                                           vcg::Use<MyFace>     ::AsFaceType>{};
+ 
+class MyVertex  : public vcg::Vertex< MyUsedTypes, vcg::vertex::Coord3f, vcg::vertex::Normal3f, vcg::vertex::BitFlags  >{};
+class MyFace    : public vcg::Face<   MyUsedTypes, vcg::face::FFAdj,  vcg::face::VertexRef, vcg::face::BitFlags > {};
+class MyEdge    : public vcg::Edge<   MyUsedTypes> {};
+ 
+class MyMesh    : public vcg::tri::TriMesh< std::vector<MyVertex>, std::vector<MyFace> , std::vector<MyEdge>  > {};
+
+cambio:
+class MyEdge;
+class MyFace;
+class MyVertex;
+struct MyUsedTypes : public UsedTypes<	Use<MyVertex>   ::AsVertexType,
+                                        Use<MyEdge>     ::AsEdgeType,
+                                        Use<MyFace>     ::AsFaceType>{};
+
+class MyVertex  : public Vertex<MyUsedTypes, vertex::InfoOcf, vertex::Coord3f, vertex::Normal3f, vertex::TexCoord2f, vertex::VFAdj , vertex::Qualityf, vertex::Color4b, vertex::BitFlags  >{};
+class MyFace    : public Face< MyUsedTypes, face::InfoOcf, face::VertexRef, face::CurvatureDirf, face::BitFlags, face::FFAdjOcf ,face::VFAdj , face::WedgeTexCoord2f> {};
+class MyEdge    : public Edge< MyUsedTypes>{};
+class MyMesh    : public tri::TriMesh< vertex::vector_ocf<MyVertex>, face::vector_ocf<MyFace> , vector<MyEdge>  > {};
+
+-Uso opcional de hastable para eficiencia (no se ha isto mejora). Posible uso para el futuro.
+
+// Spacial index configuration
+    
+  vcg::tri::UpdateBounding<MyMesh>::Box(startMesh);
+
+  // Prepare spatial hashing
+  vcg::SpatialHashTable<MyVertex::CoordType, float> spatialHash;
+  auto boundingBox = startMesh.bbox; // Bounding box of type Box3f
+
+  // Extract vertex positions into a Point3<float> container
+  std::vector<MyVertex::CoordType> positions;
+  for (auto& vert : startMesh.vert) {
+      positions.push_back(vert.P());
+  }
+
+  // Use the positions with SpatialHashTable
+  spatialHash.Set(positions.begin(), positions.end(), boundingBox);

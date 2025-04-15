@@ -30,9 +30,9 @@ def voronoi_atlas_parametrization(input_file, output_file, sample_num=None):
         #print("Ejecución exitosa:")
         #print(result.stdout)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Error ejecutando {executable}: {e.stderr}") from e
+        raise RuntimeError(f"Runtime Error {executable}: {e.stderr}") from e
     except FileNotFoundError:
-        raise FileNotFoundError(f"No se encontró el ejecutable: {executable}")
+        raise FileNotFoundError(f"It wasn't possible to find the file: {executable}")
     
 
 
@@ -81,6 +81,43 @@ def normal_filter(input_file, output_file, fitting_adj_num=None, smoothing_iter_
         #print("Ejecución exitosa:")
         #print(result.stdout)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Error ejecutando {executable}: {e.stderr}") from e
+        raise RuntimeError(f"Runtime Error {executable}: {e.stderr}") from e
     except FileNotFoundError:
-        raise FileNotFoundError(f"No se encontró el ejecutable: {executable}")
+        raise FileNotFoundError(f"It wasn't possible to find the file: {executable}")
+    
+def delete_border(input_file, output_file, hole_size=100):
+    """
+    Ejecuta el programa `delete_border` con los argumentos proporcionados.
+
+    Args:
+        input_file (str): Archivo de entrada en formato PLY.
+        output_file (str): Archivo de salida en formato PLY.
+        hole_size (int, optional): Tamaño del agujero a eliminar. Por defecto, None.
+
+    Raises:
+        RuntimeError: Si el ejecutable retorna un error.
+        FileNotFoundError: Si el ejecutable no se encuentra.
+    """
+    executable = "./delete_border"
+    
+    # Construcción del comando con los argumentos obligatorios
+    command = [executable, input_file, output_file]
+
+    # Agrega el argumento opcional si se proporciona
+    if hole_size is not None:
+        command.append(str(hole_size))
+
+    try:
+        # Ejecuta el comando
+        result = subprocess.run(
+            command,
+            check=True,          # Lanza una excepción si el comando falla
+            capture_output=False, # No captura stdout ni stderr
+            text=True            # Decodifica la salida como texto
+        )
+        #print("Ejecución exitosa:")
+        #print(result.stdout)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Runtime Error {executable}: {e.stderr}") from e
+    except FileNotFoundError:
+        raise FileNotFoundError(f"It wasn't possible to find the file: {executable}")

@@ -74,11 +74,7 @@ class TransparentGraph(QWidget):
 
             self.setVisible(True)  # Mostrar la ventana cuando se actualiza
 
-    def mousePressEvent(self, event):
-        """Detecta cuando se empieza a arrastrar la ventana."""
-        if event.button() == Qt.LeftButton:
-            self.dragging = True
-            self.last_pos = event.globalPos()
+    
 
 class OutputStream:
     """ Clase para redirigir stdout a QTextEdit """
@@ -134,7 +130,7 @@ class MainApp(QMainWindow):
         #Tamaño de los agujeros
         self.hole_size = 50
         #Número e caras objetivo cuando simplifico
-        self.target_faces = 40000
+        self.target_faces = 10000
 
         # Crear barra de menú
         menubar = self.menuBar()
@@ -324,7 +320,14 @@ class MainApp(QMainWindow):
     def load_ply(self):
         self.file_path, _ = QFileDialog.getOpenFileName(self, "Opne PLY file", "", "PLY Files (*.ply)")
         if self.file_path:
-            self.ply_viewer_class.load_ply(self.file_path)
+             
+            lectura_correcta = self.ply_viewer_class.load_ply(self.file_path)
+            if not lectura_correcta:
+                print("It wasn't possible to read the file because it is corrupted")
+                return 
+            #En caso de que el nuevo archivo no sea una nube de puntos
+            #hay que forzar la actualización de la variable que almacena el nombre del archivo
+            self.point_cloud_name=None
             #mirar si la nube de puntos tiene normales
             self.has_normals = self.ply_viewer_class.has_normals()
             #mirar si la nube de puntos tiene caras, es decir, si no es una nube de puntos
@@ -415,7 +418,7 @@ class MainApp(QMainWindow):
                 QApplication.processEvents()
                 check_voronoi = self.apply_voronoi()
                 QApplication.processEvents()
-                number_of_faces = 15000
+                number_of_faces = self.target_faces + 5000
                 # en caso de que voronoi falle, cambiamos algunos parámetros
                 while not check_voronoi:
                     print("Voronoi atlas failed, trying again with more faces for the mesh simplification")
@@ -437,7 +440,7 @@ class MainApp(QMainWindow):
                 self.safe_transfer_texture() 
                 
             else:
-                print("To use this botton, cuurent mesh should be a point cloud")
+                print("To use this button, cuurent mesh should be a point cloud")
         else:
             print("There is not any file loaded")
     def create_processing_menu(self):
@@ -510,6 +513,8 @@ class MainApp(QMainWindow):
 
     def safe_transfer_texture(self):
         self.ms.clear()
+        if self.point_cloud_name == None:
+            print("Error: You should load a point cloud in the first position to use this filter")
         load_ply(self.ms, self.point_cloud_name)
         point_cloud_id= self.ms.current_mesh_id()
 

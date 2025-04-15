@@ -490,7 +490,10 @@ class PlyViewer(QOpenGLWidget):
         self.faces = None
         self.texcoords = None
         self.texture = None
-        ply = PlyData.read(filename)
+        try:
+            ply = PlyData.read(filename)
+        except Exception as e:
+            return False
         
         #hay ocasiones en las que introducimos archivos con textura 
         for comment in ply.comments:
@@ -562,17 +565,18 @@ class PlyViewer(QOpenGLWidget):
             self.faces = np.array(new_faces, dtype=np.uint32)
         #en caso de que esa malla tenga textura inicailizarla
        
-        if self.texture_path:
+        if self.texture_path is not None:
             if os.path.exists(self.texture_path):
                 self.load_texture()
             else:
-                print("No se ha encontrado el archivo de textura de esta malla")
+                print("there is not texture file for this mesh")
             
         self.init_opengl() 
         self.load_shaders()
         
         self.update()
-        
+
+        return True
 
 
     

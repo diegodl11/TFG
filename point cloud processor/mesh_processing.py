@@ -4,6 +4,8 @@ import pymeshlab
 import numpy as np
 import multiprocessing
 import os
+import psutil
+import os
 from mesh_functions import *
 
 #nombre de la carpeta de archivos temporales como variabe global
@@ -68,12 +70,24 @@ def repair_mesh(ms, hole_size, file_name):
         holes = ms.meshing_close_holes(maxholesize=hole_size)
         print(f"Number of closed holes: {holes}")
 
+        
+        closed_holes = holes["closed_holes"]
+        new_faces = holes["new_faces"]
+
+        if closed_holes>0 and new_faces==0:
+            delete_border_if_necessary(ms, hole_size)
+            hole_size=hole_size*2
+            check_mesh_repaired=False
+
         #esto es necesario porque a veces crea agujeros con problemas
         #pero no hay ninguna forma de arreglar esos problemas
         #entonces no para de crear agujeros con problemas
         #continuamente de manera infinita. Con esto cortamos el bucle
+        #porque volvemos a eliminar el borde
         if previous_holes == holes:
-            check_mesh_repaired =True
+            delete_border_if_necessary(ms, hole_size)
+            hole_size=hole_size*2
+            check_mesh_repaired=False
     
     
     output_file =file_name
@@ -168,7 +182,33 @@ def remove_huge_unused_faces(ms):
         print(f"Error: could not be possible to access the current mesh. {e}")
         return None
 
+def delete_border_if_necessary(ms, hole_size=100):
+    #elimina los bordes de los agujeros que no se pueden cerrar para eliminar posibles
+    #errores topoógicos no detectados
+    output_file="tmp.ply"
+    folder_path = os.path.join(os.getcwd(), folder_name)  # Ruta absoluta
+    os.makedirs(folder_path, exist_ok=True)
+  
+    # Unir la carpeta con el nombre del archivo
+    # Obtener un nombre único si el archivo ya existe
+    
+    output_file = os.path.join(folder_path, os.path.basename(output_file))
+    ms.save_current_mesh(
+        file_name=output_file,
+        binary=False,  # Guarda en formato binario (más compacto y compatible)
+        save_vertex_quality = False,
+        save_vertex_color = True,
+        save_vertex_normal  = True,
+        save_wedge_texcoord=False    # Guardar coordenadas UV
 
+    )
+    try:
+        delete_border(output_file, output_file, hole_size)
+        load_ply(ms, output_file)
+        #remover el archivo temporal 
+        os.remove(output_file)
+    except Exception as e:
+            print(f" An unexpected error occurred: {e}")
 
 def compute_normals_if_necessary(ms,has_normals, has_faces,file_name):
     #solo usar este método si la nube de puntos no tiene normales y es efectivamente una
@@ -266,10 +306,20 @@ def mesh_simplification(ms, target_num_of_faces):
     #cuenta cada caracter como un argumentos
     return output_file
 
+def kill_voronoi_processes():
+    """Encuentra y mata todos los procesos voronoi_atlas en ejecución."""
+    for proc in psutil.process_iter(attrs=["pid", "name"]):
+        try:
+            if "voronoi_atlas" in proc.info["name"]:  # Filtra por nombre
+                print(f"Killing voronoi_atlas process (PID: {proc.info['pid']})")
+                proc.kill()  # Mata el proceso
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue  # Si ya murió o no se puede acceder, ignorar
+
 def run_voronoi_with_timeout(input_file, output_file, timeout=15):
     """
     Ejecuta voronoi_atlas_parametrization con un límite de tiempo.
-    Si el tiempo se excede, el proceso se detiene.
+    Si se excede el tiempo, el proceso y todos sus subprocesos se terminan.
     """
     def target():
         try:
@@ -283,13 +333,15 @@ def run_voronoi_with_timeout(input_file, output_file, timeout=15):
     process.join(timeout)  # Esperar hasta 'timeout' segundos
 
     if process.is_alive():
-        print("Voronoi Atlas stuck in infinite loop. Processing is ending...")
-        process.terminate()  # Detener el proceso
-        process.join()  # Asegurar que el proceso finalizó
+        print("Voronoi Atlas stuck in infinite loop. Killing all related processes...")
+        process.terminate()  # Matar el proceso principal
+        process.join()  # Asegurar que finalizó
+
+        # 🔥 Eliminar procesos zombis de voronoi_atlas
+        kill_voronoi_processes()
         return False  # Indica que falló por timeout
     
     return True  # Indica que terminó correctamente
-
 def voronoi_atlas(ms, file_name):
 
     #comprobar antes de aplicar este filtro que la malla esté reparada

@@ -40,7 +40,9 @@ También es necesario asegurarse de que se está utilizando la versión correcta
 
 ```bash
 export PYQT_PATH=$(python3 -c "import sys; print(sys.prefix)")/local/lib/python3.10/dist-packages/PyQt5
-export LD_LIBRARY_PATH="$PYQT_PATH/Qt5/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$(python3 -c "import PyQt5; 
+print(PyQt5.__path__[0])")/Qt5/lib:$LD_LIBRARY_PATH"
+
 ```
 
 > La variable `PYQT_PATH` se generaliza automáticamente usando Python para que funcione independientemente del entorno WSL del usuario.

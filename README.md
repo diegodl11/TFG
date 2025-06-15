@@ -32,7 +32,7 @@ export QT_X11_NO_MITSHM=1
 export XDG_RUNTIME_DIR=/tmp/runtime-root
 mkdir -p $XDG_RUNTIME_DIR
 chmod 700 $XDG_RUNTIME_DIR
-```
+``` 
 
 ### 4. Rutas de PyQt5 y librerías Qt
 
@@ -46,7 +46,7 @@ export LD_LIBRARY_PATH="$PYQT_PATH/Qt5/lib:$LD_LIBRARY_PATH"
 > La variable `PYQT_PATH` se generaliza automáticamente usando Python para que funcione independientemente del entorno WSL del usuario.
 
 ---
-
+Importante: hacer source ~/.bashrc para que se actualicen los cambios
 ##  Requisitos del proyecto (`requirements.txt`)
 
 ```txt

@@ -56,6 +56,7 @@ pymeshlab>=2022.2
 matplotlib>=3.5
 numpy>=1.21
 plyfile>=0.7.4
+psutil
 ```
 
 ---
